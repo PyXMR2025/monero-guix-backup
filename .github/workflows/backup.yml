@@ -1,29 +1,47 @@
-name: Backup Guix Repository
+name: Auto make guix tar.gz
 
 on:
   schedule:
-    - cron: '0 0 * * *' 
-  workflow_dispatch:
+    - cron: '0 0 * * *'  
+  workflow_dispatch:     
 
 permissions:
-  actions: write
+  contents: write
 
 jobs:
-  backup-repo:
+  backup-push-clean:
     runs-on: ubuntu-latest
     steps:
-      - name: Clone full repository (mirror backup)
-        run: |
-          git clone --mirror https://github.com/monero-project/guix.git guix-repo-backup
-
-      - name: Compress backup to tar.gz
-        run: |
-          BACKUP_NAME="guix-repo-full-backup-$(date +%Y%m%d-%H%M%S)"
-          tar -zcvf "${BACKUP_NAME}.tar.gz" guix-repo-backup/
-          echo "BACKUP_FILE=${BACKUP_NAME}.tar.gz" >> $GITHUB_ENV
-
-      - name: Upload backup artifact
-        uses: actions/upload-artifact@v4
+      - name: Checkout your repo master branch
+        uses: actions/checkout@v4
         with:
-          name: guix-full-repository-backup
-          path: ${{ env.BACKUP_FILE }}
+          ref: master  
+          fetch-depth: 1
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Clone full guix repo (mirror)
+        run: |
+          git clone --mirror https://github.com/monero-project/guix.git guix-temp
+          
+      - name: Create backup archive
+        run: |
+          BACKUP_FILE="guix-repo-full-backup-$(date +%Y%m%d).tar.gz"
+          tar -zcvf "$BACKUP_FILE" guix-temp/
+          rm -rf guix-temp  
+
+      - name: Delete old backups (keep latest 3)
+        run: |
+          ls -t guix-repo-full-backup-*.tar.gz | tail -n +4 | xargs -r rm -f
+          echo "旧备份清理完成"
+
+      - name: Set Git identity
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Commit & Push to master
+        run: |
+          git add guix-repo-full-backup-*.tar.gz
+          git commit -m "Auto backup: $(date +%Y-%m-%d) | Keep latest 3 versions" || echo "ℹ️ 无文件变更，跳过提交"
+          git push origin master
+          echo "备份已成功推送到 master 分支"
