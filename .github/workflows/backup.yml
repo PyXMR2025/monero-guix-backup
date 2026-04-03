@@ -1,45 +1,29 @@
-name: Package & Release Monero Guix
+name: Backup Guix Repository
 
 on:
+  schedule:
+    - cron: '0 0 * * *' 
   workflow_dispatch:
-    inputs:
-      branch:
-        description: 'guix 仓库分支/标签'
-        required: false
-        default: 'main'
-      release_tag:
-        description: '发布版本号'
-        required: false
-        default: 'latest'
 
 permissions:
-  contents: write
+  actions: write
 
 jobs:
-  build-release:
+  backup-repo:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout monero-guix
-        uses: actions/checkout@v4
-        with:
-          repository: monero-project/guix
-          ref: ${{ inputs.branch }}
-          fetch-depth: 1
-
-      - name: Package files
+      - name: Clone full repository (mirror backup)
         run: |
-          PACKAGE_NAME="monero-guix-${{ inputs.release_tag }}-$(date +%Y%m%d)"
-          tar -zcvf "${PACKAGE_NAME}.tar.gz" ./*
-          zip -r "${PACKAGE_NAME}.zip" ./*
-          echo "PACKAGE_NAME=$PACKAGE_NAME" >> $GITHUB_ENV
+          git clone --mirror https://github.com/monero-project/guix.git guix-repo-backup
 
-      - name: Release to GitHub
-        uses: softprops/action-gh-release@v2
+      - name: Compress backup to tar.gz
+        run: |
+          BACKUP_NAME="guix-repo-full-backup-$(date +%Y%m%d-%H%M%S)"
+          tar -zcvf "${BACKUP_NAME}.tar.gz" guix-repo-backup/
+          echo "BACKUP_FILE=${BACKUP_NAME}.tar.gz" >> $GITHUB_ENV
+
+      - name: Upload backup artifact
+        uses: actions/upload-artifact@v4
         with:
-          tag_name: ${{ inputs.release_tag }}
-          name: Monero Guix 打包文件 ${{ inputs.release_tag }}
-          files: |
-            ${{ env.PACKAGE_NAME }}.tar.gz
-            ${{ env.PACKAGE_NAME }}.zip
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          name: guix-full-repository-backup
+          path: ${{ env.BACKUP_FILE }}
