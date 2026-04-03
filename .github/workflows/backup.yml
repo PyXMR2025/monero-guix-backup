@@ -1,47 +1,47 @@
-name: Auto make guix tar.gz
-
+name: 每日备份推master
 on:
   schedule:
     - cron: '0 0 * * *'  
-  workflow_dispatch:     
+  workflow_dispatch:
 
 permissions:
   contents: write
 
 jobs:
-  backup-push-clean:
+  backup:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout your repo master branch
+      - name: 检出master分支
         uses: actions/checkout@v4
         with:
-          ref: master  
-          fetch-depth: 1
+          ref: master
+          lfs: true  
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Clone full guix repo (mirror)
+      - name: 安装 Git LFS
+        run: |
+          sudo apt-get install git-lfs
+          git lfs install
+          git lfs track "*.tar.gz"  
+          git add .gitattributes
+
+      - name: 克隆完整Guix仓库
         run: |
           git clone --mirror https://github.com/monero-project/guix.git guix-temp
-          
-      - name: Create backup archive
-        run: |
           BACKUP_FILE="guix-repo-full-backup-$(date +%Y%m%d).tar.gz"
           tar -zcvf "$BACKUP_FILE" guix-temp/
-          rm -rf guix-temp  
+          rm -rf guix-temp
+          echo "BACKUP_FILE=$BACKUP_FILE" >> $GITHUB_ENV
 
-      - name: Delete old backups (keep latest 3)
+      - name: 删除旧备份（保留3个）
         run: |
           ls -t guix-repo-full-backup-*.tar.gz | tail -n +4 | xargs -r rm -f
-          echo "旧备份清理完成"
+          git lfs prune  # 清理LFS旧文件
 
-      - name: Set Git identity
+      - name: 提交并推送到master
         run: |
-          git config --global user.name "github-actions[bot]"
-          git config --global user.email "github-actions[bot]@users.noreply.github.com"
-
-      - name: Commit & Push to master
-        run: |
-          git add guix-repo-full-backup-*.tar.gz
-          git commit -m "Auto backup: $(date +%Y-%m-%d) | Keep latest 3 versions" || echo "ℹ️ 无文件变更，跳过提交"
+          git config --global user.name "actions"
+          git config --global user.email "actions@github.com"
+          git add .
+          git commit -m "备份 ${{ env.BACKUP_FILE }} | 保留最新3个"
           git push origin master
-          echo "备份已成功推送到 master 分支"
